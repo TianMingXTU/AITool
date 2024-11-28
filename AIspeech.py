@@ -17,9 +17,11 @@ from PyQt5.QtWidgets import (
     QProgressBar,
     QFrame,
     QTabWidget,
+    QMessageBox,
+    QHBoxLayout,
 )
 from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QFont
 import pyaudio
 from zhipuai import ZhipuAI
 from datetime import datetime
@@ -176,6 +178,12 @@ class SpeechRecognitionApp(QWidget):
         # Main layout
         main_layout = QVBoxLayout()
 
+        # Header
+        header = QLabel("Welcome to ChatGLM Voice Assistant")
+        header.setFont(QFont("Arial", 16, QFont.Bold))
+        header.setAlignment(Qt.AlignCenter)
+        main_layout.addWidget(header)
+
         # Tab widget for better organization
         tab_widget = QTabWidget(self)
         main_layout.addWidget(tab_widget)
@@ -244,11 +252,18 @@ class SpeechRecognitionApp(QWidget):
         audio_tab.setLayout(audio_layout)
         tab_widget.addTab(audio_tab, "Audio Visualization")
 
-        # Progress bar
+        # Footer with progress bar and help button
+        footer_layout = QHBoxLayout()
         self.progress_bar = QProgressBar(self)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
-        main_layout.addWidget(self.progress_bar)
+        footer_layout.addWidget(self.progress_bar)
+
+        help_button = QPushButton("Help", self)
+        help_button.clicked.connect(self.show_help)
+        footer_layout.addWidget(help_button)
+
+        main_layout.addLayout(footer_layout)
 
         self.setLayout(main_layout)
 
@@ -357,6 +372,19 @@ class SpeechRecognitionApp(QWidget):
         """Update the response area with ChatGLM model's reply."""
         self.response_area.append(f"ChatGLM [{self.get_current_time()}]: {response}\n")
         self.response_area.moveCursor(QtGui.QTextCursor.End)
+
+    def show_help(self) -> None:
+        """Display a help dialog with usage instructions."""
+        QMessageBox.information(
+            self,
+            "Help",
+            "Welcome to ChatGLM Voice Assistant!\n\n"
+            "1. Select a theme and language.\n"
+            "2. Click 'Start Listening' to begin voice recognition.\n"
+            "3. Speak into the microphone to interact with the assistant.\n"
+            "4. View the assistant's response in the 'Assistant Response' area.\n"
+            "5. Use the 'Audio Visualization' tab to monitor audio input.",
+        )
 
     @staticmethod
     def get_current_time() -> str:

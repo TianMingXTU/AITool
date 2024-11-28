@@ -1,0 +1,7 @@
+PyQt5==5.15.9
+pyqtgraph==0.13.3
+SpeechRecognition==3.8.1
+pyaudio==0.2.13
+zhipuai==1.0.0
+numpy==1.23.5
+python-dotenv==1.0.0
