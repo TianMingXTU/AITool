@@ -9,21 +9,28 @@ from PyQt5.QtWidgets import (
     QApplication,
     QPushButton,
     QVBoxLayout,
+    QGridLayout,
     QWidget,
     QLabel,
     QComboBox,
-    QHBoxLayout,
     QTextEdit,
     QProgressBar,
     QFrame,
+    QTabWidget,
 )
 from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtGui import QColor
 import pyaudio
 from zhipuai import ZhipuAI
 from datetime import datetime
 import logging
 from PyQt5.QtCore import QRunnable
+from dotenv import load_dotenv
+import os
+from typing import List, Dict, Optional
+
+# Load environment variables
+load_dotenv()
 
 # Initialize logging
 logging.basicConfig(
@@ -31,9 +38,10 @@ logging.basicConfig(
 )
 
 # ChatGLM integration
-client = ZhipuAI(
-    api_key="8013501cb9918c19098c4fc2372f0ba8.neocjMKUYjhDBNbi"
-)  # Fill in your API key
+API_KEY = os.getenv("ZHIPU_API_KEY", "your_default_api_key")
+if API_KEY == "your_default_api_key":
+    logging.warning("API key is not set. Please configure it in a .env file.")
+client = ZhipuAI(api_key=API_KEY)
 
 # Audio settings
 FORMAT = pyaudio.paInt16
@@ -42,22 +50,22 @@ RATE = 16000
 CHUNK = 1024  # Size of the audio chunk for each read
 
 # Global messages list to store conversation history for context
-messages = []
+messages: List[Dict[str, str]] = []
 
 
 class AudioRecorder:
     """Class responsible for recording audio in chunks and passing data for visualization."""
 
-    def __init__(self, waveform_plot_widget, spectrum_plot_widget):
+    def __init__(self, waveform_plot_widget: pg.PlotWidget, spectrum_plot_widget: pg.PlotWidget):
         self.waveform_plot_widget = waveform_plot_widget
         self.spectrum_plot_widget = spectrum_plot_widget
         self.pyaudio_instance = pyaudio.PyAudio()
-        self.stream = None
+        self.stream: Optional[pyaudio.Stream] = None
         self.is_recording = False
         self.timer = QtCore.QTimer()
         logging.info("AudioRecorder initialized.")
 
-    def start_recording(self):
+    def start_recording(self) -> None:
         """Start the audio recording."""
         if self.is_recording:
             logging.warning("Recording already in progress.")
@@ -75,7 +83,7 @@ class AudioRecorder:
         self.timer.start(50)  # Update the plot every 50ms
         logging.info("Audio recording started.")
 
-    def stop_recording(self):
+    def stop_recording(self) -> None:
         """Stop the audio recording."""
         if not self.is_recording:
             logging.warning("Recording is not active.")
@@ -89,7 +97,7 @@ class AudioRecorder:
         self.pyaudio_instance.terminate()
         logging.info("Audio recording stopped.")
 
-    def update_plots(self):
+    def update_plots(self) -> None:
         """Read audio data from the stream and update both waveform and spectrum plots."""
         if self.is_recording:
             try:
@@ -115,7 +123,7 @@ class AudioPlotWidget(pg.PlotWidget):
         self.setXRange(0, CHUNK)
         self.waveform_curve = self.plot(pen=pg.mkPen("g", width=2))
 
-    def plot_waveform(self, audio_data):
+    def plot_waveform(self, audio_data: np.ndarray) -> None:
         """Plot the audio waveform in real-time."""
         self.waveform_curve.setData(audio_data)
 
@@ -134,7 +142,7 @@ class SpectrumPlotWidget(pg.PlotWidget):
             (1, QColor(255, 0, 0)),
         ]
 
-    def plot_spectrum(self, fft_data):
+    def plot_spectrum(self, fft_data: np.ndarray) -> None:
         """Plot the FFT spectrum in real-time with gradient color."""
         color_map = pg.ColorMap(
             [0, 0.5, 1], [color[1] for color in self.gradient_color]
@@ -158,34 +166,44 @@ class SpeechRecognitionApp(QWidget):
             self.audio_plot_widget, self.spectrum_plot_widget
         )
 
-    def initUI(self):
+    def initUI(self) -> None:
+        """Initialize the user interface."""
         self.setWindowTitle("ChatGLM Voice Assistant")
-        self.setGeometry(300, 300, 900, 800)
+        self.setGeometry(300, 300, 1000, 800)
         self.setAutoFillBackground(True)
         self.apply_theme(self.selected_theme)
 
-        layout = QVBoxLayout()
+        # Main layout
+        main_layout = QVBoxLayout()
+
+        # Tab widget for better organization
+        tab_widget = QTabWidget(self)
+        main_layout.addWidget(tab_widget)
+
+        # Tab 1: Chat and settings
+        chat_tab = QWidget()
+        chat_layout = QGridLayout()
 
         self.text_area = QTextEdit(self)
         self.text_area.setReadOnly(True)
-        self.text_area.setFixedHeight(350)
-        layout.addWidget(self.text_area)
+        chat_layout.addWidget(QLabel("Chat History:"), 0, 0)
+        chat_layout.addWidget(self.text_area, 1, 0, 1, 2)
 
         self.response_area = QTextEdit(self)
         self.response_area.setReadOnly(True)
-        self.response_area.setFixedHeight(300)
-        layout.addWidget(self.response_area)
+        chat_layout.addWidget(QLabel("Assistant Response:"), 2, 0)
+        chat_layout.addWidget(self.response_area, 3, 0, 1, 2)
 
         self.status_label = QLabel("Click 'Start Listening' to begin", self)
-        layout.addWidget(self.status_label)
+        chat_layout.addWidget(self.status_label, 4, 0)
 
         self.theme_dropdown = QComboBox(self)
         self.theme_dropdown.addItems(
             ["Hacker Style", "Modern Style", "Light Style", "Dark Style"]
         )
         self.theme_dropdown.currentIndexChanged.connect(self.change_theme)
-        layout.addWidget(QLabel("Select Theme:"))
-        layout.addWidget(self.theme_dropdown)
+        chat_layout.addWidget(QLabel("Select Theme:"), 5, 0)
+        chat_layout.addWidget(self.theme_dropdown, 5, 1)
 
         self.language_dropdown = QComboBox(self)
         self.language_dropdown.addItems(
@@ -199,172 +217,89 @@ class SpeechRecognitionApp(QWidget):
             ]
         )
         self.language_dropdown.currentIndexChanged.connect(self.change_language)
-        h_layout = QHBoxLayout()
-        h_layout.addWidget(QLabel("Language: "))
-        h_layout.addWidget(self.language_dropdown)
-        layout.addLayout(h_layout)
-
-        self.progress_bar = QProgressBar(self)
-        self.progress_bar.setMaximum(100)
-        self.progress_bar.setValue(0)
-        layout.addWidget(self.progress_bar)
+        chat_layout.addWidget(QLabel("Select Language:"), 6, 0)
+        chat_layout.addWidget(self.language_dropdown, 6, 1)
 
         self.button = QPushButton("Start Listening", self)
         self.button.clicked.connect(self.toggle_listening)
-        layout.addWidget(self.button)
+        chat_layout.addWidget(self.button, 7, 0, 1, 2)
 
-        separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(separator)
+        chat_tab.setLayout(chat_layout)
+        tab_widget.addTab(chat_tab, "Chat & Settings")
+
+        # Tab 2: Audio Visualization
+        audio_tab = QWidget()
+        audio_layout = QVBoxLayout()
 
         self.audio_plot_widget = AudioPlotWidget()
-        self.audio_plot_widget.setFixedHeight(100)
-        layout.addWidget(self.audio_plot_widget)
+        self.audio_plot_widget.setFixedHeight(200)
+        audio_layout.addWidget(QLabel("Audio Waveform:"))
+        audio_layout.addWidget(self.audio_plot_widget)
 
         self.spectrum_plot_widget = SpectrumPlotWidget()
-        self.spectrum_plot_widget.setFixedHeight(100)
-        layout.addWidget(self.spectrum_plot_widget)
+        self.spectrum_plot_widget.setFixedHeight(200)
+        audio_layout.addWidget(QLabel("Audio Spectrum:"))
+        audio_layout.addWidget(self.spectrum_plot_widget)
 
-        self.setLayout(layout)
+        audio_tab.setLayout(audio_layout)
+        tab_widget.addTab(audio_tab, "Audio Visualization")
+
+        # Progress bar
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        main_layout.addWidget(self.progress_bar)
+
+        self.setLayout(main_layout)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_progress_bar)
 
-    def apply_theme(self, theme):
+    def apply_theme(self, theme: str) -> None:
         """Apply selected theme to the application."""
-        if theme == "Hacker Style":
-            self.setStyleSheet(
-                """
-                QWidget {
-                    background-color: #000000;
-                    color: #00FF00;
-                }
-                QPushButton {
-                    background-color: #00FF00;
-                    color: #000000;
-                    font-weight: bold;
-                    border-radius: 10px;
-                }
-                QPushButton:hover {
-                    background-color: #000000;
-                    color: #00FF00;
-                }
-                QLabel, QComboBox {
-                    color: #00FF00;
-                }
-                QTextEdit {
-                    background-color: #1E1E1E;
-                    color: #00FF00;
-                    font-family: 'Courier New';
-                    border: 2px solid #00FF00;
-                }
-                QProgressBar {
-                    background-color: #1E1E1E;
-                    color: #00FF00;
-                    text-align: center;
-                }
-            """
-            )
-        elif theme == "Modern Style":
-            self.setStyleSheet(
-                """
-                QWidget {
-                    background-color: #F0F0F0;
-                    color: #000000;
-                }
-                QPushButton {
-                    background-color: #007BFF;
-                    color: #FFFFFF;
-                    font-weight: bold;
-                    border-radius: 10px;
-                }
-                QPushButton:hover {
-                    background-color: #0056b3;
-                }
-                QLabel, QComboBox {
-                    color: #000000;
-                }
-                QTextEdit {
-                    background-color: #FFFFFF;
-                    color: #000000;
-                    border: 1px solid #007BFF;
-                }
-                QProgressBar {
-                    background-color: #E0E0E0;
-                    color: #007BFF;
-                    text-align: center;
-                }
-            """
-            )
-        elif theme == "Light Style":
-            self.setStyleSheet(
-                """
-                QWidget {
-                    background-color: #FFFFFF;
-                    color: #000000;
-                }
-                QPushButton {
-                    background-color: #F0F0F0;
-                    color: #000000;
-                    border-radius: 10px;
-                }
-                QPushButton:hover {
-                    background-color: #E0E0E0;
-                }
-                QLabel, QComboBox {
-                    color: #000000;
-                }
-                QTextEdit {
-                    background-color: #FFFFFF;
-                    color: #000000;
-                    border: 1px solid #000000;
-                }
-                QProgressBar {
-                    background-color: #F0F0F0;
-                    color: #000000;
-                    text-align: center;
-                }
-            """
-            )
-        elif theme == "Dark Style":
-            self.setStyleSheet(
-                """
-                QWidget {
-                    background-color: #2E2E2E;
-                    color: #FFFFFF;
-                }
-                QPushButton {
-                    background-color: #555555;
-                    color: #FFFFFF;
-                    border-radius: 10px;
-                }
-                QPushButton:hover {
-                    background-color: #444444;
-                }
-                QLabel, QComboBox {
-                    color: #FFFFFF;
-                }
-                QTextEdit {
-                    background-color: #1E1E1E;
-                    color: #FFFFFF;
-                    border: 1px solid #555555;
-                }
-                QProgressBar {
-                    background-color: #444444;
-                    color: #FFFFFF;
-                    text-align: center;
-                }
-            """
-            )
+        themes = {
+            "Hacker Style": """
+                QWidget { background-color: #000000; color: #00FF00; }
+                QPushButton { background-color: #00FF00; color: #000000; font-weight: bold; border-radius: 10px; }
+                QPushButton:hover { background-color: #000000; color: #00FF00; }
+                QLabel, QComboBox { color: #00FF00; }
+                QTextEdit { background-color: #1E1E1E; color: #00FF00; font-family: 'Courier New'; border: 2px solid #00FF00; }
+                QProgressBar { background-color: #1E1E1E; color: #00FF00; text-align: center; }
+            """,
+            "Modern Style": """
+                QWidget { background-color: #F0F0F0; color: #000000; }
+                QPushButton { background-color: #007BFF; color: #FFFFFF; font-weight: bold; border-radius: 10px; }
+                QPushButton:hover { background-color: #0056b3; }
+                QLabel, QComboBox { color: #000000; }
+                QTextEdit { background-color: #FFFFFF; color: #000000; border: 1px solid #007BFF; }
+                QProgressBar { background-color: #E0E0E0; color: #007BFF; text-align: center; }
+            """,
+            "Light Style": """
+                QWidget { background-color: #FFFFFF; color: #000000; }
+                QPushButton { background-color: #F0F0F0; color: #000000; border-radius: 10px; }
+                QPushButton:hover { background-color: #E0E0E0; }
+                QLabel, QComboBox { color: #000000; }
+                QTextEdit { background-color: #FFFFFF; color: #000000; border: 1px solid #000000; }
+                QProgressBar { background-color: #F0F0F0; color: #000000; text-align: center; }
+            """,
+            "Dark Style": """
+                QWidget { background-color: #2E2E2E; color: #FFFFFF; }
+                QPushButton { background-color: #555555; color: #FFFFFF; border-radius: 10px; }
+                QPushButton:hover { background-color: #444444; }
+                QLabel, QComboBox { color: #FFFFFF; }
+                QTextEdit { background-color: #1E1E1E; color: #FFFFFF; border: 1px solid #555555; }
+                QProgressBar { background-color: #444444; color: #FFFFFF; text-align: center; }
+            """,
+        }
+        self.setStyleSheet(themes.get(theme, ""))
 
-    def change_theme(self):
+    def change_theme(self) -> None:
         """Change theme based on the selection in the dropdown."""
         selected_theme = self.theme_dropdown.currentText()
         self.apply_theme(selected_theme)
         logging.info(f"Theme changed to {selected_theme}")
 
-    def change_language(self):
+    def change_language(self) -> None:
         """Change language based on the selection in the dropdown."""
         languages = {
             "English (US)": "en-US",
@@ -379,7 +314,7 @@ class SpeechRecognitionApp(QWidget):
         self.status_label.setText(f"Language changed to {selected}")
         logging.info(f"Language changed to {selected}")
 
-    def toggle_listening(self):
+    def toggle_listening(self) -> None:
         """Toggle between starting and stopping the listening process."""
         if not self.is_listening:
             self.is_listening = True
@@ -403,14 +338,14 @@ class SpeechRecognitionApp(QWidget):
             self.audio_recorder.stop_recording()
             logging.info("Stopped listening.")
 
-    def start_listening_thread(self):
+    def start_listening_thread(self) -> None:
         """Start a new thread for the listening task."""
         worker = ListenWorker(
             self.recognizer, self.microphone, self.selected_language, self, self
         )
         threading.Thread(target=worker.run, daemon=True).start()
 
-    def update_progress_bar(self):
+    def update_progress_bar(self) -> None:
         """Update the progress bar dynamically."""
         current_value = self.progress_bar.value()
         if current_value >= 100:
@@ -418,19 +353,19 @@ class SpeechRecognitionApp(QWidget):
         else:
             self.progress_bar.setValue(current_value + 5)
 
-    def update_response_area(self, response):
+    def update_response_area(self, response: str) -> None:
         """Update the response area with ChatGLM model's reply."""
         self.response_area.append(f"ChatGLM [{self.get_current_time()}]: {response}\n")
         self.response_area.moveCursor(QtGui.QTextCursor.End)
 
     @staticmethod
-    def get_current_time():
+    def get_current_time() -> str:
         """Return the current time formatted as HH:MM:SS."""
         return datetime.now().strftime("%H:%M:%S")
 
 
 class ListenWorker(QRunnable):
-    def __init__(self, recognizer, microphone, language, parent, ui):
+    def __init__(self, recognizer: sr.Recognizer, microphone: sr.Microphone, language: str, parent: SpeechRecognitionApp, ui: SpeechRecognitionApp):
         super().__init__()
         self.recognizer = recognizer
         self.microphone = microphone
@@ -438,7 +373,8 @@ class ListenWorker(QRunnable):
         self.parent = parent
         self.ui = ui
 
-    def run(self):
+    def run(self) -> None:
+        """Run the speech recognition task."""
         with self.microphone as source:
             self.recognizer.adjust_for_ambient_noise(source)
             while self.parent.is_listening:
@@ -473,7 +409,7 @@ class ListenWorker(QRunnable):
                     self.parent.status_label.setText(f"An error occurred.")
                     logging.error(f"Error during listening: {e}")
 
-    async def send_to_chatglm(self, user_input):
+    async def send_to_chatglm(self, user_input: str) -> None:
         """Send recognized text to ChatGLM model and display the response."""
         words = "你是一个专业的助手，请你简练的回答问题，不得超过200字。"
         response = await asyncio.to_thread(
